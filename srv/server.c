@@ -53,7 +53,7 @@ int main() {
             for (int j = 0; j < 196; ++j) {
                 filename[j] = buf[4 + j];
             }
-            printf("filename: %s\n",filename);
+            printf("server_filename: %s\n",filename);
             FILE *fp = fopen(filename, "w");
 
 
@@ -77,12 +77,44 @@ int main() {
         }
         //END PUT TASK
 
+        //START GET TASK
+        if(strstr(buf, "get")!=NULL){
+            printf("buf: %s\n",buf);
+            char filename[196];
+
+            for (int j = 0; j <196 ; ++j) {
+                filename[j]=buf[4+j];
+            }
+            printf("Server_filename: %s\n",filename);
+            FILE *fp = fopen(filename, "r");
+
+            if(fp==NULL){
+                printf("Datei nicht gefunden\n");
+                continue;
+
+            }else {
+                int block_size;
+                while ((block_size = fread(buf, sizeof(char), 256, fp)) > 0) {
+
+                    if (send(cfd, buf, block_size, 0) < 0) {
+                        die("Can not send file.\n");
+                    }
+                    bzero(buf, 256);
+
+                }
+                printf("finish.\n");
+                close(cfd);
+                continue;
+            }
+        }
+        //END GET TASK
+
 		if (bytes < 0) {
             die("Couldn't receive message");
         }
 
-		//if (write(cfd, buf2, bytes) < 0)
-		//	die("Couldn't send message");
+		if (write(cfd, buf2, bytes) < 0)
+			die("Couldn't send message");
 	}
 	close(cfd); close(sfd);
 
