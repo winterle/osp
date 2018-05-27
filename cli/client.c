@@ -76,22 +76,22 @@ int main()
 		//START PUT TASK
 			if(strstr(lineBuffer, "put")!=NULL){
 				printf("linebuffer: %s\n",lineBuffer);
-
-				if(write(cli, lineBuffer, 256)<0){
-					die("Could not send put task.");
-				}
 				char filename[196];
 
 				for (int j = 0; j <196 ; ++j) {
 					filename[j]=lineBuffer[4+j];
 				}
-				printf("filename: %s\n",filename);
+				printf("client_filename: %s\n",filename);
 				FILE *fp = fopen(filename, "r");
 
 				if(fp==NULL){
 					printf("Datei nicht gefunden\n");
+					continue;
 
 				}else {
+				if(write(cli, lineBuffer, 256)<0){
+					die("Could not send put task.");
+				}
 					int block_size;
 					while ((block_size = fread(buf, sizeof(char), 256, fp)) > 0) {
 
@@ -107,6 +107,44 @@ int main()
 				}
 			}
 		//END PUT TASK
+
+		//START GET TASK
+		if(strstr(lineBuffer, "get")!=NULL) {
+			int block_size;
+
+			printf("linebuffer: %s\n",lineBuffer);
+			char filename[196];
+
+			for (int j = 0; j < 196; ++j) {
+				filename[j] = lineBuffer[4 + j];
+			}
+			printf("Client_filename: %s\n",filename);
+			FILE *fp = fopen(filename, "w");
+
+			if(write(cli, lineBuffer, 256)<0){
+				die("Could not send put task.");
+			}
+
+			while((block_size = recv(cli, buf, 256, 0))>0){
+				if(block_size<0)
+				{
+					die("Daten konnten nicht erhalten werden.\n");
+				}
+				printf("wbuf: %s\n",buf);
+				int write_size = fwrite(buf, sizeof(char), block_size, fp);
+
+				if(write_size < block_size)
+				{
+					die("File write failed on server.\n");
+				}else if(block_size<0) {
+					break;
+				}
+				bzero(buf,256);
+			}
+			continue;
+		}
+		//END GER TASK
+
 		//if(write(cli, lineBuffer, 256)<0){
 		//	die("Can not send msg.\n");
 		//}
