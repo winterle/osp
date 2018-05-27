@@ -5,14 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <asm/errno.h>
-#include <errno.h>
+
 #ifndef SERVER_H_INCLUDED
 #define SERVER_H_INCLUDED
 
