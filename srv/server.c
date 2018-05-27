@@ -38,8 +38,9 @@ int main() {
     char dir[300];
 
     if (getcwd(dir, sizeof(dir)) != NULL) {
-    fprintf(stdout, "SERVER: Current working dir: %s\n", dir);
+        fprintf(stdout, "SERVER: Current working dir: %s\n", dir);
     }
+
 	while ((bytes = read(cfd, buf, sizeof(buf)))) {
 
 	    //START PUT TASK
