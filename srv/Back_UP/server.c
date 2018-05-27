@@ -65,8 +65,10 @@ int main()
     start_shell(pipePtr);
 	while ((bytes = read(cfd, buf, sizeof(buf)))) {
 
+	    //Das x ist dafür da um zu schauen wie oft wir diese read-schleife durchlaufen
 	    x++;
 	    printf("X: %d\n",x);
+	    //mit dem IN schauen wir was im buf steht nachdem wir was erhalten/gelesen haben
 	    printf("IN:%s",buf);
 		if (bytes < 0) {
             die("Couldn't receive message");
@@ -76,6 +78,7 @@ int main()
                 close(cfd); close(sfd);
                 exit(-1);
             }
+            //die naechsten 2 printf zeigen an was wir dem socked geben wuerden und wie gross es ist
             printf("write: %s\n",buf);
             printf("bytes:%ld\n",bytes);
 		    if(read(pipePtr[0], buf2, sizeof(buf2))<0) {
@@ -83,6 +86,7 @@ int main()
                 close(cfd); close(sfd);
                 exit(-1);
 		    }
+            //die naechsten 2 printf zeigen an was wir vom socked lesen wuerden und wie gross es ist
             printf("read: %s\n",buf2);
             printf("buf:%ld\n", sizeof(buf2));
 		if (write(cfd, buf2, bytes) < 0)
