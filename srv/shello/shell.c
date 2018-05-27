@@ -152,9 +152,12 @@ void execLine(){
 
 void getNextLine(){
     if((fgets(lineBuffer,sizeof(lineBuffer),stdin)) == NULL) printf("fgets failed\n");
+    //zeigt an wie der linebuffer zeichen fuer zeichen
+    // ausseiht und an welcher stelle welcher char steht
     for (int i = 0; i < 200; ++i) {
-        printf("S: %d",lineBuffer[i]);
+        printf("Char an stelle i=%d: %c , ASCII-Code=%d\n",i,lineBuffer[i],lineBuffer[i]);
     }
+    //zeigt an wie der COMMAND auf der commandline aussehen wuerde.
     printf("COMMAND:%s\n", lineBuffer);
 }
 /**
