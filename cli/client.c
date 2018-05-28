@@ -1,23 +1,13 @@
 #include "client.h"
-
+#include <sys/stat.h>
 #define PORT 9000
 #define HOST "127.0.0.1"
 
-int ls(){
+void cd(){
 	int rc;
 	if((rc = chdir("cli") != 0)) {
 		printf("New directory could not be set!\n");
 	}
-
-	pid_t pid;
-	int status;
-
-	if((pid=fork())==0){
-		execlp("/bin/ls", "ls", NULL);
-		exit(-1);
-	}
-	wait(&status);
-	return WEXITSTATUS(status);
 }
 
 int create_socket(){
@@ -53,21 +43,19 @@ int main()
 	if(connect(cli,(struct sockaddr*) &addr, sizeof(addr))< 0){
 		die("Can not connect to socket");
 	}
-	sleep(5);
-	ls();
-	char dir[300];
+
+	//TO CHANGE THE DIR TO WOrking Dir form cli
+	cd();
+	//TO SHOW THE DIR
+	/*char dir[300];
 	if (getcwd(dir, sizeof(dir)) != NULL)
 	fprintf(stdout, "CLIENT: Current working dir: %s\n", dir);
-
+	*/
 	while(strcmp(lineBuffer,"logout")!=0){
+
 		char c;
 		int i =0;
 
-		//while((c=getchar())!='\n'&&i!=256){
-		//	lineBuffer[i]=c;
-		//	i++;
-		//}
-        //lineBuffer[i]=10;
 		while((c=getchar())!=10&&c!='\n'){
 			lineBuffer[i]=c;
 			i++;
@@ -75,68 +63,96 @@ int main()
 		i=0;
 		//START PUT TASK
 			if(strstr(lineBuffer, "put")!=NULL){
-				printf("linebuffer: %s\n",lineBuffer);
 				char filename[196];
 
 				for (int j = 0; j <196 ; ++j) {
 					filename[j]=lineBuffer[4+j];
 				}
-				printf("client_filename: %s\n",filename);
+
 				FILE *fp = fopen(filename, "r");
 
 				if(fp==NULL){
-					printf("Datei nicht gefunden\n");
+					printf("Client: Datei nicht gefunden\n");
 					continue;
 
 				}else {
 				if(write(cli, lineBuffer, 256)<0){
-					die("Could not send put task.");
+					die("Client: Could not send put task.");
 				}
+					struct stat st;
+					stat(filename, &st);
+					int file_size;
+					file_size = st.st_size;
+					bzero(buf,256);
+					sprintf(buf, "%d", file_size);
+					int l = strlen(buf);
+					if (write(cli, buf, l) < 0)
+						die("Couldn't send message");
+					bzero(buf,256);
+
 					int block_size;
+
+					while(strstr(buf, "rdy")==NULL){
+						if(read(cli, buf, sizeof(buf))<0)
+							die("Client: Can not read rdy.\n");
+					}
 					while ((block_size = fread(buf, sizeof(char), 256, fp)) > 0) {
 
 						if (send(cli, buf, block_size, 0) < 0) {
-							die("Can not send file.\n");
+							die("Client: Can not send file.\n");
 						}
 						bzero(buf, 256);
 
 					}
-					printf("finish.\n");
-					close(cli);
-					//continue;
+					fclose(fp);
+					continue;
 				}
 			}
 		//END PUT TASK
 
 		//START GET TASK
 		if(strstr(lineBuffer, "get")!=NULL) {
+
 			int block_size;
 
-			printf("linebuffer: %s\n",lineBuffer);
 			char filename[196];
 
 			for (int j = 0; j < 196; ++j) {
 				filename[j] = lineBuffer[4 + j];
 			}
-			printf("Client_filename: %s\n",filename);
+
 			FILE *fp = fopen(filename, "w");
 
 			if(write(cli, lineBuffer, 256)<0){
-				die("Could not send put task.");
+				die("Client: Could not send get task.");
 			}
+			bzero(buf,256);
+			if(read(cli, buf, sizeof(buf))<0)
+				die("Client: Can not receive msg.\n");
+
+			int file_size=atoi(buf);
+			strcpy(buf,"rdy");
+
+			if (write(cli, buf, 256) < 0)
+				die("Couldn't send message");
+
+			bzero(buf,256);
 
 			while((block_size = recv(cli, buf, 256, 0))>0){
+
+				file_size=file_size-block_size;
 				if(block_size<0)
 				{
-					die("Daten konnten nicht erhalten werden.\n");
+					die("Client: Daten konnten nicht erhalten werden.\n");
 				}
-				printf("wbuf: %s\n",buf);
+
 				int write_size = fwrite(buf, sizeof(char), block_size, fp);
 
 				if(write_size < block_size)
 				{
-					die("File write failed on server.\n");
-				}else if(block_size<0) {
+					die("Client: File write failed on server.\n");
+				}else if(file_size<=0) {
+					fclose(fp);
 					break;
 				}
 				bzero(buf,256);
@@ -146,16 +162,17 @@ int main()
 		//END GER TASK
 
 		//if(write(cli, lineBuffer, 256)<0){
-		//	die("Can not send msg.\n");
+		//	die("Client: Can not send msg.\n");
 		//}
-		//for (int j = 0; j < 256; ++j) {
-		//	lineBuffer[i]='\0';
-		//}
+
+		//bzero(lineBuffer,256);
+			//bzero(buf,256);
 		//if(read(cli, buf, sizeof(buf))<0){
-		//	die("Can not receive msg.\n");
+		//	die("Client: Can not receive msg.\n");
 		//}
 		//printf("[recv] %s",  buf);
 	}
+	printf("Client all closed\n");
 	close(cli);
 	printf("Client Exit\n");
 	exit(0);
