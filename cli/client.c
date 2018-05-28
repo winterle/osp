@@ -117,7 +117,7 @@ void cd_wd(){
 
 int main()
 {
-
+    cd_wd();
     struct sockaddr_in addr = {
             .sin_family = AF_INET,
             .sin_port = htons(PORT),
