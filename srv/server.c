@@ -1,86 +1,142 @@
 #include "server.h"
-
+#include <sys/stat.h>
 #define PORT 9000
 
-static int split(int* fd){
-
-    int pfd[2][2];
-    pipe(pfd[0]);
-    pipe(pfd[1]);
-
-
-	switch (fork()){
-		case 0:
-            close(pfd[0][1]);
-            close(pfd[1][0]);
-            fd[0]= pfd[0][0];
-            fd[1]= pfd[1][1];
-            return 0;
-
-		default:
-            close(pfd[1][1]);
-            close(pfd[0][0]);
-            fd[0]= pfd[1][0];
-            fd[1]= pfd[0][1];
-            return 1;
-	}
-}
-
-static void start_shell(int * fd, int cfd){
-
-    switch (split(fd)){
-        case 0:
-            dup2(fd[0],STDIN_FILENO);
-            dup2(STDOUT_FILENO,fd[1]);
-            execlp("./shell", "shell", NULL);
-            exit(-1);
-
-        case 1:
-            dup2(fd[0],cfd);
-            dup2(cfd,fd[1]);
-
+void cd(){
+    int rc;
+    if((rc = chdir("srv") != 0)) {
+        printf("New directory could not be set!\n");
     }
 }
 
+int main() {
+    srv_addr.sin_family = AF_INET;
+    srv_addr.sin_port = htons(PORT);
+    srv_addr.sin_addr.s_addr = INADDR_ANY;
 
-int main()
-{
-	srv_addr.sin_family = AF_INET;
-	srv_addr.sin_port=htons(PORT);
-	srv_addr.sin_addr.s_addr = INADDR_ANY;
+    if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        die("Couldn't open the socket");
+    if (bind(sfd, (struct sockaddr *) &srv_addr, sad_sz) < 0)
+        die("Couldn't bind socket");
+    if (listen(sfd, 1) < 0)
+        die("Couldn't listen to the socket");
+    cfd = accept(sfd, (struct sockaddr *) &cli_addr, &sad_sz);
+    if (cfd < 0)
+        die("Couldn't accept incoming connection");
 
-	if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-		 die("Couldn't open the socket");
-	if (bind(sfd, (struct sockaddr*) &srv_addr, sad_sz) < 0)
-		 die("Couldn't bind socket");
-	if (listen(sfd, 1) < 0)
-		 die("Couldn't listen to the socket");
-	cfd = accept(sfd, (struct sockaddr*) &cli_addr, &sad_sz);
-	if (cfd < 0)
-		die("Couldn't accept incoming connection");
-	//buf->stdin
-	//stdout->client
-    int pipePtr[2];
+    //TO CHANGE THE DIR TO Working Dir form srv
+    cd();
+    //TO SHOW THE DIR
+    /*char dir[300];
+    if (getcwd(dir, sizeof(dir)) != NULL)
+    fprintf(stdout, "SERVER: Current working dir: %s\n", dir);
+    */
 
-    start_shell(pipePtr, cfd);
 	while ((bytes = read(cfd, buf, sizeof(buf)))) {
-		if (bytes < 0) {
-            die("Couldn't receive message");
-        }
-		    if(write(pipePtr[0], buf, bytes)<0) {
-                die("P0 dont work");
-                close(cfd); close(sfd);
-                exit(-1);
-            }
-		    if(read(pipePtr[1], buf, sizeof(buf))<0) {
-                die("P1 dont work");
-                close(cfd); close(sfd);
-                exit(-1);
+
+	    //START PUT TASK
+        if(strstr(buf, "put")!=NULL) {
+
+            int block_size;
+
+            char filename[196];
+
+            for (int j = 0; j < 196; ++j) {
+                filename[j] = buf[4 + j];
             }
 
-		if (write(cfd, buf, bytes) < 0)
-			die("Couldn't send message");
+            FILE *fp = fopen(filename, "w");
+
+            bzero(buf,256);
+            if(read(cfd, buf, sizeof(buf))<0)
+                die("Client: Can not receive msg.\n");
+
+            int file_size=atoi(buf);
+            bzero(buf,256);
+
+
+            strcpy(buf,"rdy");
+            if (write(cfd, buf, bytes) < 0)
+                die("Couldn't send message");
+
+            while((block_size = recv(cfd, buf2, 256, 0))>0){
+
+                file_size=file_size-block_size;
+
+                if(block_size<0)
+                {
+                    die("Server: Daten konnten nicht erhalten werden.\n");
+                }
+
+                int write_size = fwrite(buf2, sizeof(char), block_size, fp);
+
+                if(write_size < block_size)
+                {
+                    die("Server: File write failed on server.\n");
+                }else if(file_size<=0) {
+                    fclose(fp);
+                    break;
+                }
+
+                bzero(buf2,256);
+            }
+            continue;
+        }
+        //END PUT TASK
+
+        //START GET TASK
+        if(strstr(buf, "get")!=NULL){
+
+            char filename[196];
+
+            for (int j = 0; j <196 ; ++j) {
+                filename[j]=buf[4+j];
+            }
+
+            FILE *fp = fopen(filename, "r");
+
+            if(fp==NULL){
+                printf("Server: Datei nicht gefunden\n");
+                continue;
+
+            }else {
+                struct stat st;
+                stat(filename, &st);
+                int file_size;
+                file_size = st.st_size;
+                bzero(buf,256);
+                sprintf(buf, "%d", file_size);
+
+                if (write(cfd, buf, bytes) < 0)
+                	die("Couldn't send message");
+                bzero(buf,256);
+                int block_size;
+                while(strstr(buf, "rdy")==NULL){
+                    if(read(cfd, buf, sizeof(buf))<0)
+                        die("Client: Can not read rdy.\n");
+                }
+                while ((block_size = fread(buf, sizeof(char), 256, fp)) > 0) {
+
+                    if (send(cfd, buf, block_size, 0) < 0) {
+                        die("Server: Can not send file.\n");
+                    }
+                    bzero(buf, 256);
+
+                }
+                fclose(fp);
+                continue;
+            }
+        }
+        //END GET TASK
+
+		//if (bytes < 0) {
+          //  die("Couldn't receive message");
+        //}
+
+		//if (write(cfd, buf2, bytes) < 0)
+		//	die("Couldn't send message");
 	}
+	printf("Server all closed\n");
 	close(cfd); close(sfd);
 
 	/*while (1)
