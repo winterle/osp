@@ -40,9 +40,9 @@ static void myInit()
 		
 		printf("(status = %d)\n", status);
 	}
-	
+	*/
 	ult_exit(0);
-	 */
+
 }
 
 int main()
