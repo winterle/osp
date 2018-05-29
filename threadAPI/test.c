@@ -5,6 +5,7 @@
 
 #include "ult.h"
 
+/*
 static void threadA()
 {
 	ult_exit(0);
@@ -14,9 +15,11 @@ static void threadB()
 {
 	ult_exit(0);
 }
-
+*/
 static void myInit()
 {
+	printf("executing the initThread\n");
+	/*
 	int tids[2], i, status;
 	
 	printf("spawn A\n");
@@ -39,6 +42,7 @@ static void myInit()
 	}
 	
 	ult_exit(0);
+	 */
 }
 
 int main()
