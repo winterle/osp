@@ -10,12 +10,20 @@
 
 #define _XOPEN_SOURCE
 #include <ucontext.h>
-#define STACK_SIZE (64*1024)
+#define STACK_SIZE (1024*1024)
 #define MAX_THREADS 1024
+
+/* fixme Problems:
+ * there are a few invalid reads at setcontext, no idea why (might have to look at the source code), can see when running valgrind
+ * have to free the runQueueTid's, memory leak right now
+ * 
+ * bunch of other bugs/not yet implemented things (look at code)
+ * */
 
 typedef struct linkedListNode{
     int tid;
     int exitCode;
+    int waitingFor;
     struct linkedListNode *next;
 }runQueueTid;
 
@@ -35,7 +43,7 @@ short ret; //boolean, if we just loaded the context so we can decide, weather to
 
 
 static runQueueTid * rq_New();
-static runQueueTid * rq_GetLast();
+static runQueueTid * rq_GetLast(runQueueTid *from);
 static runQueueTid * rq_GetTid(int tid);
 static void roundRobin();
 
@@ -78,9 +86,9 @@ int ult_spawn(ult_f f)
 
     /*insert this thread into run-queue (modulize it?)*/
     runQueueTid *new = rq_New();
-    runQueueTid *last = rq_GetLast();
+    runQueueTid *last = rq_GetLast(root);
     if(last != NULL){
-        rq_GetLast()->next = new;
+        rq_GetLast(root)->next = new;
         new->tid = newThread.tid;
     }
     else{
@@ -99,7 +107,7 @@ void ult_yield()
     roundRobin();
 }
 
-void ult_exit(int status)//only implemented for initialThread
+void ult_exit(int status)
 {
     if(activeThreadTid == 0){//todo: check if all other threads are already reaped (not really necessary)
         arrayRelease(threadArray);
@@ -110,21 +118,45 @@ void ult_exit(int status)//only implemented for initialThread
         if(this == NULL){exit(-1);}//todo catch error
         else{
             this->exitCode = status;
-            (threadArray+this->tid)[0].tid = -1;
-            this->tid = -1;
-            //todo goto scheduler
+            printf("Thread %d finished with exit code %d\n",activeThreadTid,this->exitCode);
+            roundRobin();
         }
     }
 }
 
 int ult_join(int tid, int* status)
 {
-    //todo check if tid already finished, and return
+    //todo free those reaped runQueueTids
+    rq_GetTid(activeThreadTid)->waitingFor = tid;
+    runQueueTid *finished = rq_GetTid(tid);
+    if(finished == NULL)return -1; //this thread never existed or was already reaped
+    if(finished->exitCode != INT_MAX) {
+        printf("Has already finished, returning exit code \n");
+        *status = finished->exitCode;
+        return 0;
+    }
+
+    printf("Tid has not finished yet, capturing context..\n");
     /* the thread has not finished yet, so we capture the context and let the scheduler take over */
     ucontext_t saveContext;
     getcontext(&saveContext);
-    if(ret == 1){ret = 0;return 0;} //todo we just restored the previously saved context, return to the thread with correct return code
-    (threadArray+activeThreadTid)[0].context = saveContext;
+    if(ret == 1){//todo we just restored the previously saved context, return to the thread with correct return code
+        ret = 0;
+        printf("Context sucessfully restored \n");
+        if(rq_GetTid(activeThreadTid) == NULL)printf("something went wrong, rq_gettid of active thread tid returned NULL");
+        printf("Waited for tid %d\n",rq_GetTid(activeThreadTid)->waitingFor);
+        int exitCode = rq_GetTid(rq_GetTid(activeThreadTid)->waitingFor)->exitCode;
+        printf("Exit code was %d\n",exitCode);
+        *status = exitCode;
+        if(exitCode != INT_MAX) {
+            *status = exitCode;
+            return 0;
+        }
+        else return -1; //todo the requested thread has not finished yet, call the scheduler again (no need to save context, last one is still ok)
+
+    }
+    printf("Saving the context\n");
+    (threadArray)[activeThreadTid].context = saveContext;
     roundRobin();
 	return -1;
 }
@@ -139,14 +171,15 @@ static runQueueTid * rq_New(){
     new->next = NULL;
     new->tid = -1;
     new->exitCode = INT_MAX;
+    new->waitingFor = INT_MAX;
     return new;
 }
 
-static runQueueTid * rq_GetLast(){
-    if(root == NULL){
+static runQueueTid * rq_GetLast(runQueueTid *from){
+    if(from == NULL){
         return NULL;
     }
-    runQueueTid * curr = root;
+    runQueueTid * curr = from;
     while(curr->next != NULL) curr = curr->next;
     return curr;
 }
@@ -163,12 +196,20 @@ static runQueueTid * rq_GetTid(int tid){
 
 static void roundRobin(){
     runQueueTid *newRoot = root->next;
-    if(newRoot == NULL){}//todo there is only one thread, return
-    rq_GetLast()->next = root;
-    while(newRoot->tid == -1)newRoot = newRoot->next; //todo we have to put them to the beginning of the queue (they are already finished), right now they are lost in the void
+    rq_GetLast(root)->next = root;
+    root->next = NULL;
+    if(newRoot == NULL){exit(-1);}//todo there is only one thread, return
+    while(newRoot->exitCode != INT_MAX){
+        rq_GetLast(newRoot)->next = newRoot;
+        runQueueTid *this = newRoot->next;
+        newRoot->next = NULL;
+        newRoot = this;
+    }
     root = newRoot;
     activeThreadTid = root->tid;
-    tcb_t setTo = (threadArray+activeThreadTid)[0];
+    printf("New activeThreadTid = %d\n",activeThreadTid);
+    /* array.h might realloc or move this element, but it does not matter because this pointer is only used once in this local context */
+    ucontext_t *setTo = &(threadArray)[activeThreadTid].context;
     ret = 1;
-    setcontext(&setTo.context);
+    setcontext(setTo);
 }

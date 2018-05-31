@@ -8,11 +8,13 @@
 
 static void threadA()
 {
-	ult_exit(0);
+    printf("hello, here is threadA\n");
+	ult_exit(17);
 }
 
 static void threadB()
 {
+    printf("hello, here is threadB\n");
 	ult_exit(0);
 }
 
@@ -20,7 +22,7 @@ static void myInit()
 {
 	printf("executing the initThread\n");
 
-	int tids[2];//, i, status;
+	int tids[2], i, status;
 	
 	printf("spawn A\n");
 	tids[0] = ult_spawn(threadA);
@@ -29,12 +31,13 @@ static void myInit()
 	tids[1] = ult_spawn(threadB);
     printf("Tid of threadB = %d\n",tids[1]);
 
-	/*
+
 	for (i = 0; i < 2; ++i)
 	{
 		printf("waiting for tids[%d] = %d\n", i, tids[i]);
 		fflush(stdout);
-		
+
+
 		if (ult_join(tids[i], &status) < 0)
 		{
 			fprintf(stderr, "join for %d failed\n", tids[i]);
@@ -42,9 +45,10 @@ static void myInit()
 		}
 		
 		printf("(status = %d)\n", status);
+
 	}
-	*/
-	ult_exit(0);
+    ult_exit(0);
+
 
 }
 
