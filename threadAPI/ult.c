@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <limits.h>
 
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -14,6 +15,7 @@
 
 typedef struct linkedListNode{
     int tid;
+    int exitCode;
     struct linkedListNode *next;
 }runQueueTid;
 
@@ -33,6 +35,7 @@ runQueueTid *root;
 
 static runQueueTid * rq_New();
 static runQueueTid * rq_GetLast();
+static runQueueTid * rq_GetTid(int tid);
 
 
 void ult_init(ult_f f)
@@ -43,12 +46,11 @@ void ult_init(ult_f f)
 
     if(ult_spawn(f)){};//todo catch error: should be zero, since it's the very first thread
 
-
+    /* insert into runQueue */
     root = rq_New();
     root->next = NULL;
     root->tid = 0;
-	/* todo schedule this thread in the scheduleQueue and return
-	 *
+	/*
 	 * todo or should we execute this thread now? (eg. load the context)  if so, we might have to save the currContext somewhere to return here after
 	 * todo the provided function returns (might just not return, if specified so, it's fine) */
     tcb_t setTo = arrayTop(threadArray);
@@ -96,6 +98,16 @@ void ult_exit(int status)//only implemented for initialThread
         arrayRelease(threadArray);
         exit(status); //fixme: how to return to the ip where init was called? (better: return to ult_init after the setcontext call) -> some global bool's
     }
+    else{
+        runQueueTid *this = rq_GetTid(activeThreadTid);
+        if(this == NULL){exit(-1);}//todo catch error
+        else{
+            this->exitCode = status;
+            (threadArray+this->tid)[0].tid = -1;
+            this->tid = -1;
+            //todo goto scheduler
+        }
+    }
 }
 
 int ult_join(int tid, int* status)
@@ -112,6 +124,7 @@ static runQueueTid * rq_New(){
     runQueueTid *new = malloc(sizeof(runQueueTid));
     new->next = NULL;
     new->tid = -1;
+    new->exitCode = INT_MAX;
     return new;
 }
 
@@ -121,5 +134,15 @@ static runQueueTid * rq_GetLast(){
     }
     runQueueTid * curr = root;
     while(curr->next != NULL) curr = curr->next;
+    return curr;
+}
+
+static runQueueTid * rq_GetTid(int tid){
+    runQueueTid *curr = root;
+    if(curr == NULL){
+        return NULL;
+    }
+    while(curr->tid != tid && curr->next != NULL)curr = curr->next;
+    if(curr->tid != tid)return NULL;
     return curr;
 }
