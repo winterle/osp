@@ -5,7 +5,7 @@
 
 #include "ult.h"
 
-/*
+
 static void threadA()
 {
 	ult_exit(0);
@@ -15,18 +15,21 @@ static void threadB()
 {
 	ult_exit(0);
 }
-*/
+
 static void myInit()
 {
 	printf("executing the initThread\n");
-	/*
-	int tids[2], i, status;
+
+	int tids[2];//, i, status;
 	
 	printf("spawn A\n");
 	tids[0] = ult_spawn(threadA);
+    printf("Tid of threadA = %d\n",tids[0]);
 	printf("spawn B\n");
 	tids[1] = ult_spawn(threadB);
-	
+    printf("Tid of threadB = %d\n",tids[1]);
+
+	/*
 	for (i = 0; i < 2; ++i)
 	{
 		printf("waiting for tids[%d] = %d\n", i, tids[i]);

@@ -31,16 +31,19 @@ typedef struct tcb_s
 tcb_t *threadArray;
 int activeThreadTid;
 runQueueTid *root;
+short ret; //boolean, if we just loaded the context so we can decide, weather to return from yield() resp. join() or to continue working inside of these functions
 
 
 static runQueueTid * rq_New();
 static runQueueTid * rq_GetLast();
 static runQueueTid * rq_GetTid(int tid);
+static void roundRobin();
 
 
 void ult_init(ult_f f)
 {
     root = NULL; /* important: has to be at the very beginning, otherwise possible segmentation violations! */
+    ret = 0;
     threadArray = (arrayInit)(8,sizeof(tcb_t)); //initializing a new Array using array.h
     if(threadArray == NULL){}//todo catch error
 
@@ -89,7 +92,11 @@ int ult_spawn(ult_f f)
 
 void ult_yield()
 {
-
+    ucontext_t saveContext;
+    getcontext(&saveContext);
+    if(ret == 1){ret = 0;return;} //todo we just restored the previously saved context, return to the thread with correct return code
+    (threadArray+activeThreadTid)[0].context = saveContext;
+    roundRobin();
 }
 
 void ult_exit(int status)//only implemented for initialThread
@@ -112,6 +119,13 @@ void ult_exit(int status)//only implemented for initialThread
 
 int ult_join(int tid, int* status)
 {
+    //todo check if tid already finished, and return
+    /* the thread has not finished yet, so we capture the context and let the scheduler take over */
+    ucontext_t saveContext;
+    getcontext(&saveContext);
+    if(ret == 1){ret = 0;return 0;} //todo we just restored the previously saved context, return to the thread with correct return code
+    (threadArray+activeThreadTid)[0].context = saveContext;
+    roundRobin();
 	return -1;
 }
 
@@ -145,4 +159,16 @@ static runQueueTid * rq_GetTid(int tid){
     while(curr->tid != tid && curr->next != NULL)curr = curr->next;
     if(curr->tid != tid)return NULL;
     return curr;
+}
+
+static void roundRobin(){
+    runQueueTid *newRoot = root->next;
+    if(newRoot == NULL){}//todo there is only one thread, return
+    rq_GetLast()->next = root;
+    while(newRoot->tid == -1)newRoot = newRoot->next; //todo we have to put them to the beginning of the queue (they are already finished), right now they are lost in the void
+    root = newRoot;
+    activeThreadTid = root->tid;
+    tcb_t setTo = (threadArray+activeThreadTid)[0];
+    ret = 1;
+    setcontext(&setTo.context);
 }
