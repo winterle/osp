@@ -10,13 +10,14 @@
 
 #define _XOPEN_SOURCE
 #include <ucontext.h>
-#define STACK_SIZE (1024*1024)
+#define STACK_SIZE (64*1024)
 #define MAX_THREADS 1024
 
 /* fixme Problems:
  * there are a few invalid reads at setcontext, no idea why (might have to look at the source code), can see when running valgrind
- * have to free the runQueueTid's, memory leak right now
- * 
+ * have to free the runQueueTids, memory leak right now (partially fixed)
+ * reusing tids is not possible right now
+ * yield() does not seem to work properly -> stack smashing!
  * bunch of other bugs/not yet implemented things (look at code)
  * */
 
@@ -45,7 +46,10 @@ short ret; //boolean, if we just loaded the context so we can decide, weather to
 static runQueueTid * rq_New();
 static runQueueTid * rq_GetLast(runQueueTid *from);
 static runQueueTid * rq_GetTid(int tid);
+static void rq_Release();
 static void roundRobin();
+static void die (const char *errorMessage);
+
 
 
 void ult_init(ult_f f)
@@ -53,9 +57,9 @@ void ult_init(ult_f f)
     root = NULL; /* important: has to be at the very beginning, otherwise possible segmentation violations! */
     ret = 0;
     threadArray = (arrayInit)(8,sizeof(tcb_t)); //initializing a new Array using array.h
-    if(threadArray == NULL){}//todo catch error
+    if(threadArray == NULL) die("Error initializing the treadArray\n");
 
-    if(ult_spawn(f)){};//todo catch error: should be zero, since it's the very first thread
+    if(ult_spawn(f))die("Spawning the initial thread failed\n");
 
     /* insert into runQueue */
     root = rq_New();
@@ -79,12 +83,12 @@ int ult_spawn(ult_f f)
     newThread.context.uc_link = 0;
     newThread.context.uc_stack.ss_flags = 0; // no blocked signals during execution of this thread
     newThread.context.uc_stack.ss_size = STACK_SIZE;
-    newThread.context.uc_stack.ss_sp = newThread.stackMem; //set stackPointer of initThread to stackMem (Question: does stack not build up to lower indices?)
+    newThread.context.uc_stack.ss_sp = newThread.stackMem; //set stackPointer of initThread to stackMem
     newThread.tid = (int)arrayCount(threadArray);
     makecontext(&newThread.context,f,0);
     arrayPush(threadArray) = newThread;
 
-    /*insert this thread into run-queue (modulize it?)*/
+    /*insert this thread into run-queue*/
     runQueueTid *new = rq_New();
     runQueueTid *last = rq_GetLast(root);
     if(last != NULL){
@@ -101,9 +105,11 @@ int ult_spawn(ult_f f)
 void ult_yield()
 {
     ucontext_t saveContext;
+    ret = 0;
     getcontext(&saveContext);
-    if(ret == 1){ret = 0;return;} //todo we just restored the previously saved context, return to the thread with correct return code
-    (threadArray+activeThreadTid)[0].context = saveContext;
+    if(ret == 1){printf("context sucessfully restored\n");ret = 0;return;}
+    printf("tid %d called yield\n",activeThreadTid);
+    threadArray[activeThreadTid].context = saveContext;
     roundRobin();
 }
 
@@ -111,11 +117,12 @@ void ult_exit(int status)
 {
     if(activeThreadTid == 0){//todo: check if all other threads are already reaped (not really necessary)
         arrayRelease(threadArray);
+        rq_Release();
         exit(status); //fixme: how to return to the ip where init was called? (better: return to ult_init after the setcontext call) -> some global bool's
     }
     else{
         runQueueTid *this = rq_GetTid(activeThreadTid);
-        if(this == NULL){exit(-1);}//todo catch error
+        if(this == NULL)die("Didn't find the tid of this thread in the internal runQueue\n");
         else{
             this->exitCode = status;
             printf("Thread %d finished with exit code %d\n",activeThreadTid,this->exitCode);
@@ -126,7 +133,7 @@ void ult_exit(int status)
 
 int ult_join(int tid, int* status)
 {
-    //todo free those reaped runQueueTids
+    //todo free those reaped runQueueTids and make the tid's available again
     rq_GetTid(activeThreadTid)->waitingFor = tid;
     runQueueTid *finished = rq_GetTid(tid);
     if(finished == NULL)return -1; //this thread never existed or was already reaped
@@ -140,14 +147,12 @@ int ult_join(int tid, int* status)
     /* the thread has not finished yet, so we capture the context and let the scheduler take over */
     ucontext_t saveContext;
     getcontext(&saveContext);
-    if(ret == 1){//todo we just restored the previously saved context, return to the thread with correct return code
+    if(ret == 1){
         ret = 0;
-        printf("Context sucessfully restored \n");
-        if(rq_GetTid(activeThreadTid) == NULL)printf("something went wrong, rq_gettid of active thread tid returned NULL");
+        printf("Context successfully set \n");
+        if(rq_GetTid(activeThreadTid) == NULL)die("Internal error\n");
         printf("Waited for tid %d\n",rq_GetTid(activeThreadTid)->waitingFor);
         int exitCode = rq_GetTid(rq_GetTid(activeThreadTid)->waitingFor)->exitCode;
-        printf("Exit code was %d\n",exitCode);
-        *status = exitCode;
         if(exitCode != INT_MAX) {
             *status = exitCode;
             return 0;
@@ -207,9 +212,29 @@ static void roundRobin(){
     }
     root = newRoot;
     activeThreadTid = root->tid;
-    printf("New activeThreadTid = %d\n",activeThreadTid);
+    printf("Setting the context: new activeThreadTid = %d\n",activeThreadTid);
     /* array.h might realloc or move this element, but it does not matter because this pointer is only used once in this local context */
     ucontext_t *setTo = &(threadArray)[activeThreadTid].context;
     ret = 1;
     setcontext(setTo);
+}
+
+static void die (const char *errorMessage){
+    fprintf(stderr,"%s",errorMessage);
+    arrayRelease(threadArray);
+    rq_Release();
+    exit(-1);
+}
+
+static void rq_Release(){
+    runQueueTid *curr = root;
+    runQueueTid *prev = root;
+    if(curr == NULL)return;
+    curr=curr->next;
+    do{
+        curr = curr->next;
+        free(prev);
+        prev = curr;
+    }
+    while(prev!=NULL);
 }
