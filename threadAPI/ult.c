@@ -13,11 +13,16 @@
 #define STACK_SIZE (64*1024)
 #define MAX_THREADS 1024
 
-int FLAG_1=0;
-int FLAG_2=0;
-int FLAG_3=0;
-int FLAG_4=0;
-int FLAG_5=0;
+int FLAG_init=0;
+int FLAG_spawn=1;
+int FLAG_yield=0;
+int FLAG_exit=0;
+int FLAG_join=0;
+int FLAG_check=0;
+int FLAG_read=0;
+int FLAG_rr_getnext=0;
+int FLAG_getTCBbyTID=0;
+int FLAG_print=0;
 
 /* fixme Problems:
  * there are a few invalid reads at setcontext, no idea why (might have to look at the source code), can see when running valgrind
@@ -54,7 +59,6 @@ static tcb_t * getTCBbyTID(int tid);
 static int rr_getNext();
 static void print();
 
-
 void ult_init(ult_f f)
 {
     threadCount = 0;
@@ -66,7 +70,7 @@ void ult_init(ult_f f)
 
     /* insert into runQueue */
     activeThreadTid = tid;
-    if(FLAG_4==1)printf("intial thread spawned\n");
+    if(FLAG_init==1)printf("intial thread spawned\n");
     setcontext(&nextThread->context);
 
 }
@@ -90,7 +94,7 @@ int ult_spawn(ult_f f)
     newThread->context.uc_stack.ss_size = STACK_SIZE;
     newThread->context.uc_stack.ss_sp = newThread->stackMem; //set stackPointer of initThread to stackMem
     newThread->tid = threadCount++;
-    if(FLAG_4==1)printf("new thread spawned, tid = %d\n",newThread->tid);
+    if(FLAG_spawn==1)printf("new thread spawned, tid = %d\n",newThread->tid);
     makecontext(&newThread->context,f,0);
 
     /*insert this thread into run-queue*/
@@ -109,16 +113,16 @@ void ult_yield()
 
 void ult_exit(int status)
 {
-    if(FLAG_4==1)printf("tid %d finished\n",activeThreadTid);
+    if(FLAG_exit==1)printf("tid %d finished\n",activeThreadTid);
     if(activeThreadTid == 0){//todo: check if all other threads are already reaped (not really necessary)
         tcb_t *curr = nextThread;
         while(curr->nextInQ!=NULL && curr!=NULL){
             tcb_t *this = curr;
             curr = curr->nextInQ;
-            if(FLAG_1==1) printf("freeing %d",this->tid); //out
+            if(FLAG_exit==1) printf("freeing %d",this->tid); //out
             free(this);
         }
-        if(FLAG_1==1)printf("freeing %d",curr->tid); //out
+        if(FLAG_exit==1)printf("freeing %d",curr->tid); //out
         free(curr);
         exit(status); //fixme: how to return to the ip where init was called? (better: return to ult_init after the setcontext call) -> some global bool's
     }
@@ -135,38 +139,38 @@ void ult_exit(int status)
 int ult_join(int tid, int* status)
 {
     st = status;
-    if(FLAG_2==1)printf("join\n");
+    if(FLAG_join==1)printf("join\n");
     tcb_t *self = getTCBbyTID(activeThreadTid);
     if(self == NULL){
-        if(FLAG_4==1)printf("self is NULL\n");
+        if(FLAG_join==1)printf("self is NULL\n");
         return -1;
     }
     tcb_t *waitingFor = getTCBbyTID(tid);
     if(waitingFor == NULL){
-        if(FLAG_4==1)printf("waiting for is NULL");
+        if(FLAG_join==1)printf("waiting for is NULL");
         return -1;
     } //this thread never existed or was already reaped
 
     if(waitingFor->exitCode != INT_MAX) {
-        if(FLAG_4==1)printf("Has already finished, returning exit code \n");
+        if(FLAG_join==1)printf("Has already finished, returning exit code \n");
         *st = waitingFor->exitCode;
         return 0;
     }
 
-    if(FLAG_4==1)printf("Tid has not finished yet, swapping contexts...\n");
+    if(FLAG_join==1)printf("Tid has not finished yet, swapping contexts...\n");
     /* the thread has not finished yet, so we capture the context and let the scheduler take over */
     int nextTid = rr_getNext();
     swapcontext(&self->context,&getTCBbyTID(nextTid)->context);
     /*  */
-    swap:    if(FLAG_4==1)printf("context restored\n");
-    if(FLAG_4==1)printf("Waited for tid %d\n",tid);
+    swap:    if(FLAG_join==1)printf("context restored\n");
+    if(FLAG_join==1)printf("Waited for tid %d\n",tid);
     int exitCode = waitingFor->exitCode;
     if(exitCode != INT_MAX) {
         *st = exitCode;
         return 0;
     }
     else {
-        if(FLAG_4==1)printf("waiting some more\n");
+        if(FLAG_join==1)printf("waiting some more\n");
         nextTid = rr_getNext();
         swapcontext(&self->context,&getTCBbyTID(nextTid)->context);
         goto swap;
@@ -181,7 +185,7 @@ int check(int tid){
     fd_set set=curr->set;
     timeout.tv_sec = 0;
     timeout.tv_usec = 50;
-    if(FLAG_3==1)printf("thread= %d : fd= %d\n",tid,curr->biggest_fd);
+    if(FLAG_check==1)printf("thread= %d : fd= %d\n",tid,curr->biggest_fd);
 
     if(curr->biggest_fd==-1){
         return 1;
@@ -192,11 +196,11 @@ int check(int tid){
         fprintf(stderr,"select error (-1)");
         exit(-1);
     }else if(rv == 0) {
-        if(FLAG_3==1) printf("tid=%d no data\n",tid);
+        if(FLAG_check==1) printf("tid=%d no data\n",tid);
         curr->blocked=1;
         return 0;
     }else{
-        if(FLAG_5==1) printf("tid=%d data ist da\n",tid);
+        if(FLAG_check==1) printf("tid=%d data ist da\n",tid);
         curr->blocked=0;
         return 1;
     }
@@ -205,8 +209,8 @@ int check(int tid){
 ssize_t ult_read(int fd, void* buf, size_t size)
 {
     int byte =0;
-    if(FLAG_2==1)printf("fd=%d\n",fd);
-    if(FLAG_2==1)printf("big_fd=%d\n",getTCBbyTID(activeThreadTid)->biggest_fd);
+    if(FLAG_read==1)printf("fd=%d\n",fd);
+    if(FLAG_read==1)printf("big_fd=%d\n",getTCBbyTID(activeThreadTid)->biggest_fd);
     if(fd>=(getTCBbyTID(activeThreadTid)->biggest_fd)){
         getTCBbyTID(activeThreadTid)->biggest_fd=fd;
     }
@@ -238,7 +242,7 @@ static int rr_getNext(){
     nextThread = nextThread->nextInQ;
     last->nextInQ = NULL;
     activeThreadTid = tid;
-    if(FLAG_3==1)print();
+    if(FLAG_rr_getnext==1)print();
     if(check(last->tid)==0){
         return rr_getNext();
     }

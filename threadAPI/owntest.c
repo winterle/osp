@@ -69,7 +69,7 @@ static void threadB()
         if (strcmp(line, "stats\n")==0) {
             printf("Anzahl an bereits kopierten Bytes: %ld\n", byte);
             time2 = time1/CLOCKS_PER_SEC;
-            printf("Zeit seit Start des Threads in s = %f\n", time2);
+            printf("Zeit seit Start des Threads = %f sekunden\n", time2);
             durchsatz = byte/time2;
             printf("Durchsatz: %f\n",durchsatz);
             printf("Shell>");
@@ -94,7 +94,7 @@ static void threadB()
         }
     }
     if(FLAG_B==1) printf("Shell exit.\n");
-    ult_exit(0);
+    ult_exit(3);
 }
 
 static void myInit()
@@ -124,6 +124,7 @@ static void myInit()
         }
 
         if(FLAG_M==1) printf("(status = %d)\n", status);
+        fflush(stdout);
 
     }
     ult_exit(0);
