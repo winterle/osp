@@ -86,7 +86,7 @@ static void threadB()
             break;
         }
         if(strcmp(line,"")!=0) {
-            printf("Dont know this Order [%s] :( \n", line);
+            printf("Dont know this command [%s] :( \n", line);
             printf("Shell>");
             fflush(stdout);
             bzero(line, 100);

@@ -14,7 +14,7 @@
 #define MAX_THREADS 1024
 
 int FLAG_init=0;
-int FLAG_spawn=1;
+int FLAG_spawn=0;
 int FLAG_yield=0;
 int FLAG_exit=0;
 int FLAG_join=0;
@@ -215,7 +215,6 @@ ssize_t ult_read(int fd, void* buf, size_t size)
         getTCBbyTID(activeThreadTid)->biggest_fd=fd;
     }
 
-
      /* clear the set */
     FD_SET(fd, &(getTCBbyTID(activeThreadTid)->set)); /* add our file descriptor to the set */
 
@@ -243,8 +242,10 @@ static int rr_getNext(){
     last->nextInQ = NULL;
     activeThreadTid = tid;
     if(FLAG_rr_getnext==1)print();
-    if(check(last->tid)==0){
-        return rr_getNext();
+    if(last->blocked==1) {
+        if (check(last->tid) == 0) {
+            return rr_getNext();
+        }
     }
     if(last->exitCode!=INT_MAX)return rr_getNext();
     return tid;
