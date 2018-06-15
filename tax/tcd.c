@@ -14,6 +14,7 @@ typedef struct collector_s {
     pthread_mutex_t lock;
 }collector_t;
 
+
 double duration;
 int collectors;
 unsigned int funds;
@@ -21,8 +22,10 @@ int collectorCount;
 pthread_mutex_t collectorCountLock;
 collector_t *collectorArray;
 
+
+int tryBooking(int,int);
+
 void printStats(){
-    //fixme does this require a lock? without a lock, these stats can be inaccurate since the scheduler is preemtive!
     int total_credit = 0;
     int total_in = 0;
     int total_out = 0;
@@ -52,19 +55,48 @@ void *collector(void *arg){
     int victim;
     while(1) {
         /* select a thread to steal from */
-        //fixme does collectors require a lock -> only reading the variable, never writing it...
+        //collectors does not require a lock, because the value will never change and therefore the read-access doesn't have to be serialized
         while((victim = roll(collectors)) == collectorID);
-        //fixme IMPORTANT: does this require a lock to read? this introduces the possibility of a deadlock, might have to use trylock
-        while(collectorArray[victim].credit/2 < 100)sched_yield();
-        pthread_mutex_lock(&collectorArray[victim].lock);
-        pthread_mutex_lock(&collectorArray[collectorID].lock);
-        collectorArray[collectorID].bookings_in++;
-        collectorArray[victim].bookings_out++;
-        collectorArray[collectorID].credit += collectorArray[victim].credit/2;
-        collectorArray[victim].credit -= collectorArray[victim].credit/2;
-        pthread_mutex_unlock(&collectorArray[victim].lock);
-        pthread_mutex_unlock(&collectorArray[collectorID].lock);
+        //fixme this works without a deadlock but results in unfair behaviour, since whenever a variable is locked / a collector
+        //does not have enough money, no transaction will take place -> solution: push to queue?
+        if(!tryBooking(collectorID,victim))continue;
         sched_yield();
+    }
+}
+
+int tryBooking(int collectorID, int victimID){
+
+    if(pthread_mutex_trylock(&collectorArray[victimID].lock) == 0) {
+        if(collectorArray[victimID].credit/2 < 100){
+            pthread_mutex_unlock(&collectorArray[victimID].lock);
+            return 0;
+        }
+        if(pthread_mutex_trylock(&collectorArray[collectorID].lock) == 0){
+            collectorArray[collectorID].bookings_in++;
+            collectorArray[victimID].bookings_out++;
+            collectorArray[collectorID].credit += collectorArray[victimID].credit / 2;
+            collectorArray[victimID].credit -= collectorArray[victimID].credit / 2;
+            pthread_mutex_unlock(&collectorArray[victimID].lock);
+            pthread_mutex_unlock(&collectorArray[collectorID].lock);
+            return 1;
+        }
+        else {
+            pthread_mutex_unlock(&collectorArray[victimID].lock);
+            return 0;
+        }
+    }
+    return 0;
+}
+
+void lockAll(){
+    for(int i = 0; i < collectors; i++){
+        pthread_mutex_lock(&collectorArray[i].lock);
+    }
+}
+
+void unlockAll(){
+    for(int i = 0; i < collectors; i++){
+        pthread_mutex_unlock(&collectorArray[i].lock);
     }
 }
 
@@ -73,8 +105,13 @@ void *shell(void *arg){
     while(1){
         if(fgets(buf,sizeof(buf),stdin) == NULL)printf("error at shell\n");//todo handle error
         if(!strcmp(buf,"exit\n"))break;
-        if(!strcmp(buf,"stats\n"))printStats();
+        if(!strcmp(buf,"stats\n")){
+            lockAll();
+            printStats();
+            unlockAll();
+        }
     }
+    /* returning 0 implicitly calls pthread_exit(0) */
     return 0;
 }
 
@@ -107,6 +144,9 @@ void init(){
 	/* waiting for the shell to exit, then free the Array and exit */
     //fixme freeing the array whilst the other threads still work on those values will cause invalid reads/writes
 	pthread_join(shellThread,NULL);
+    for(int i = 0; i < collectors; i++){
+        pthread_mutex_destroy(&collectorArray[i].lock);
+    }
     free(collectorArray);
 	exit(0);
 }
