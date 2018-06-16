@@ -25,6 +25,9 @@ collector_t *collectorArray;
 
 int tryBooking(int,int);
 
+/**
+ * prints the current status of the system, requires that all variables are locked before calling!
+ * */
 void printStats(){
     int total_credit = 0;
     int total_in = 0;
@@ -64,6 +67,14 @@ void *collector(void *arg){
     }
 }
 
+/**
+ * trys to lock the collector_t structs associated with the passed ID's and execute the Booking (from victim to collector)
+ * if the credit of the victim is too small, nothing is locked and @return value = 0
+ * if at least one lock is already aquired by another thread, nothing is locked and @return = 0
+ * if the transaction has been executed @return = 1
+ * @param collectorID identifier for the recieving struct
+ * @param victimID identifier for the other struct
+ * */
 int tryBooking(int collectorID, int victimID){
 
     if(pthread_mutex_trylock(&collectorArray[victimID].lock) == 0) {
@@ -88,12 +99,13 @@ int tryBooking(int collectorID, int victimID){
     return 0;
 }
 
+/*locks all mutexes*/
 void lockAll(){
     for(int i = 0; i < collectors; i++){
         pthread_mutex_lock(&collectorArray[i].lock);
     }
 }
-
+/*unlocks all mutexes*/
 void unlockAll(){
     for(int i = 0; i < collectors; i++){
         pthread_mutex_unlock(&collectorArray[i].lock);
@@ -115,6 +127,9 @@ void *shell(void *arg){
     return 0;
 }
 
+/* initializes all the structs and mutexes/spawnes the desired amount of threads and the shell-thread
+ * then waits for termination of the shell thread, deallocates resources and exits
+ * */
 void init(){
 	collectorArray = malloc(collectors * sizeof(collector_t));
 	collectorCount = 0;
@@ -142,7 +157,7 @@ void init(){
 
 	}
 	/* waiting for the shell to exit, then free the Array and exit */
-    //fixme freeing the array whilst the other threads still work on those values will cause invalid reads/writes
+    //fixme freeing the array whilst the other threads still work on those values might cause invalid reads/writes?
 	pthread_join(shellThread,NULL);
     for(int i = 0; i < collectors; i++){
         pthread_mutex_destroy(&collectorArray[i].lock);
