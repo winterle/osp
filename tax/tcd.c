@@ -28,6 +28,7 @@ int Flag_11=0;
 
 void lockAll();
 void unlockAll();
+int transaktion(int collectorID,int victim);
 
 //debug
 void DE_if(int Flag, char* msg){
@@ -36,17 +37,11 @@ void DE_if(int Flag, char* msg){
     }
 }
 
-typedef struct waiter_s{//steven
-    int vic;
-    struct waiter_s *next;
-}waiter;
-
-
 typedef struct collector_s {
 	unsigned int credit;
 	unsigned int bookings_in;
 	unsigned int bookings_out;
-	waiter* queue;
+	int* abrechnung;
     pthread_mutex_t lock;
 }collector_t;
 
@@ -126,7 +121,7 @@ void *collector(void *arg){
         while((victim = roll(collectors)) == collectorID);
         //fixme this works without a deadlock but results in unfair behaviour, since whenever a variable is locked / a collector
         //does not have enough money, no transaction will take place -> solution: push to queue?
-        if(!tryBooking(collectorID,victim))continue;
+        if(!transaktion(collectorID,victim))continue;
         sched_yield();
     }
 }
@@ -140,83 +135,48 @@ void *collector(void *arg){
  * @param victimID identifier for the other struct
  * */
 int tryBooking(int collectorID, int victimID){
-    //exitAfterTime("line 123");//steven
-    int c=1;
-    int v=1;
-    int foundone=0;
-    if(Flag_03==1) printf("Collector: %d || Victim: %d Money: %d\n",collectorID, victimID, collectorArray[victimID].credit);
-        if (pthread_mutex_trylock(&collectorArray[collectorID].lock) == 0){
-            //printf("Lock: %d\n",collectorID);//debug
-            c = 0;
+    if(pthread_mutex_trylock(&collectorArray[victimID].lock) == 0) {
+        if(collectorArray[victimID].credit/2 < 100){
+            pthread_mutex_unlock(&collectorArray[victimID].lock);
+            return 0;
         }
-            else{ c = 1;}
-    if(pthread_mutex_trylock(&collectorArray[victimID].lock)==0) v=0;
-    else v=1;
-
-    if(c==0) {
-        foundone=1;
-        if (collectorArray[victimID].credit < 100||v==1) {
-            foundone=0;
-            waiter *curr = collectorArray[collectorID].queue;
-            if (curr == NULL) {
-                collectorArray[collectorID].queue = (waiter *) malloc(sizeof(waiter));
-                collectorArray[collectorID].queue->vic = victimID;
-                collectorArray[collectorID].queue->next = NULL;
-                pthread_mutex_unlock(&collectorArray[collectorID].lock);
-                //printf("unlock: %d\n",collectorID);//debug
-                pthread_mutex_unlock(&collectorArray[victimID].lock);
-                return 0;
-            } else {
-                while(curr->next!=NULL){
-                    curr=curr->next;
-                    waiter* new=(waiter*)malloc(sizeof(waiter));
-                    new->next=NULL;
-                    new->vic=victimID;
-                    curr->next=new;
-                    pthread_mutex_unlock(&collectorArray[victimID].lock);
-                }
-                curr = collectorArray[collectorID].queue;
-                while(curr!=NULL){
-                    if(pthread_mutex_trylock(&collectorArray[curr->vic].lock)==0){
-                        if (collectorArray[curr->vic].credit >= 100) {
-                            foundone=1;
-                            victimID=curr->vic;
-                            break;
-                        }
-                    }
-                    curr=curr->next;
-                }
-                if(curr==NULL){
-                    return 0;
-                }
-            }
+        if(pthread_mutex_trylock(&collectorArray[collectorID].lock) == 0){
+            collectorArray[collectorID].bookings_in++;
+            collectorArray[victimID].bookings_out++;
+            collectorArray[collectorID].credit += collectorArray[victimID].credit / 2;
+            collectorArray[victimID].credit -= collectorArray[victimID].credit / 2;
+            pthread_mutex_unlock(&collectorArray[victimID].lock);
+            pthread_mutex_unlock(&collectorArray[collectorID].lock);
+            return 1;
         }
+        else {
+            pthread_mutex_unlock(&collectorArray[victimID].lock);
+            return 0;
         }
-
-            if (c == 0&&foundone==1) {
-                int rest = 0;
-                int abzug = 0;
-                if (collectorArray[victimID].credit % 2 == 1) rest = 1;
-                if (collectorArray[victimID].credit / 2 < 100) {
-                    abzug = 100;
-                } else {
-                    abzug = (collectorArray[victimID].credit / 2) + rest;
-                }
-                DE_if(Flag_02, "pthread_mutex_trylock(&collectorArray[collectorID].lock) == 0");//debug
-                collectorArray[collectorID].bookings_in++;
-                collectorArray[victimID].bookings_out++;
-                collectorArray[collectorID].credit += abzug;
-                collectorArray[victimID].credit -= abzug;
-                pthread_mutex_unlock(&collectorArray[victimID].lock);
-                pthread_mutex_unlock(&collectorArray[collectorID].lock);
-                //printf("unlock: %d\n",collectorID);//debug
-
-                return 1;
-            }
-    pthread_mutex_unlock(&collectorArray[victimID].lock);
-    pthread_mutex_unlock(&collectorArray[collectorID].lock);
-        return 0;
     }
+    return 0;
+    }
+
+int transaktion(int collectorID,int victim){
+    if(tryBooking(collectorID, victim)==0){
+        collectorArray[collectorID].abrechnung[victim]++;
+        /* fixme
+         * da wir von thread 1 nach und nach durchgehen,
+         * nehmen wir öfter die kleineren threads.(fairness problem)
+         *
+         * vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+         */
+        for (int i = 0; i < collectors; ++i) {
+            if(collectorArray[collectorID].abrechnung[i]>0){
+                return tryBooking(collectorID,i);
+            }
+        }
+        return 0;
+    }else{
+        collectorArray[collectorID].abrechnung[victim]--;
+        return 1;
+    }
+}
 
 /*locks all mutexes*/
 void lockAll(){
@@ -269,7 +229,7 @@ void init(){
     if(pthread_mutex_init(&collectorCountLock,NULL))exit(-1);//todo handle error
     for(int i = 0; i < collectors; i++){
         if(pthread_mutex_init(&collectorArray[i].lock,NULL))exit(-1);//todo handle error
-        collectorArray[i].queue=NULL;
+        collectorArray[i].abrechnung=(int*)calloc(collectors,sizeof(int));
     }
 
 	/* set the scheduling policy to round robin whilst leaving all other attributes as default values*/
