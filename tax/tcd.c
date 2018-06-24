@@ -120,7 +120,7 @@ void *collector(void *arg){
 	printf("Thread %d spawned, collectorID=%d\n",(unsigned int)pthread_self(),collectorID);
     int victim;
     while(1) {
-        exitAfterTime("line 103");//steven
+        //exitAfterTime("line 103");//steven
         /* select a thread to steal from */
         //collectors does not require a lock, because the value will never change and therefore the read-access doesn't have to be serialized
         while((victim = roll(collectors)) == collectorID);
@@ -239,7 +239,14 @@ void *shell(void *arg){
 
     char buf[50];
     while(1){
-
+        time1 = clock() - tstart;
+        time2 = time1/CLOCKS_PER_SEC;
+        if((duration-time2)<=0) {
+            lockAll();
+            printStats();
+            unlockAll();
+            exit(0);
+        }
         if(fgets(buf,sizeof(buf),stdin) == NULL)printf("error at shell\n");//todo handle error
         if(!strcmp(buf,"exit\n"))break;
         if(!strcmp(buf,"stats\n")){
