@@ -237,7 +237,7 @@ void unlockAll(){
 
 void *shell(void *arg){
 
-    char buf[50];
+    //char buf[50];
     while(1){
         time1 = clock() - tstart;
         time2 = time1/CLOCKS_PER_SEC;
@@ -246,13 +246,8 @@ void *shell(void *arg){
             printStats();
             unlockAll();
             exit(0);
-        }
-        if(fgets(buf,sizeof(buf),stdin) == NULL)printf("error at shell\n");//todo handle error
-        if(!strcmp(buf,"exit\n"))break;
-        if(!strcmp(buf,"stats\n")){
-            lockAll();
-            printStats();
-            unlockAll();
+        }else{
+            sched_yield();
         }
     }
     DE_if(Flag_11,"shell end");//debug
