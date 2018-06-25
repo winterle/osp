@@ -10,7 +10,6 @@ void lockAll();
 void unlockAll();
 int transaktion(int collectorID,int victim);
 
-int Flag_04=1;
 
 typedef struct waiter_s{
     int vic;
@@ -22,7 +21,6 @@ typedef struct collector_s {
 	unsigned int credit;
 	unsigned int bookings_in;
 	unsigned int bookings_out;
-	int* abrechnung;
 	waiter *first;
 
     pthread_mutex_t lock;
@@ -124,10 +122,7 @@ int transaktion(int collectorID,int victim){
     if(exitflag==1){
         pthread_exit(0); }
     if(tryBooking(collectorID, victim)==0){
-        if(Flag_04!=1)collectorArray[collectorID].abrechnung[victim]++;
-        if(Flag_04==1) {
             if (collectorArray[collectorID].first == NULL) {
-                collectorArray[collectorID].abrechnung[victim]++;
                 waiter *new = (waiter *) malloc(sizeof(waiter));
                 new->vic = victim;
                 new->next = NULL;
@@ -145,7 +140,6 @@ int transaktion(int collectorID,int victim){
                   in=1;
                 }
                 if(in==0) {
-                collectorArray[collectorID].abrechnung[victim]++;
                 waiter *new = (waiter *) malloc(sizeof(waiter));
                 new->vic = victim;
                 new->next = curr->next;
@@ -162,13 +156,11 @@ int transaktion(int collectorID,int victim){
                     continue;
                 } else {
                     if (pre == collectorArray[collectorID].first) {
-                        collectorArray[collectorID].abrechnung[pre->vic]--;
                         curr = collectorArray[collectorID].first->next;
                         free(collectorArray[collectorID].first);
                         collectorArray[collectorID].first = curr;
                         return 1;
                     } else {
-                        collectorArray[collectorID].abrechnung[curr->vic]--;
                         pre->next = curr->next;
                         free(curr);
                         return 1;
@@ -176,23 +168,10 @@ int transaktion(int collectorID,int victim){
                 }
             }
             return 0;
-        }
-        if(Flag_04!=1) {
-            for (int i = 0; i < collectors; ++i) {
-                if (collectorArray[collectorID].abrechnung[i] > 0) {
-                    if (tryBooking(collectorID, i) == 0)continue;
-                    collectorArray[collectorID].abrechnung[victim]--;
-                    return 1;
-                }
-            }
-
-            return 0;
-        }
     }else{
 
         return 1;
     }
-    return 0;
 }
 
 /*locks all mutexes*/
@@ -246,9 +225,7 @@ void init(){
     if(pthread_mutex_init(&collectorCountLock,NULL))exit(-1);//todo handle error
     for(int i = 0; i < collectors; i++){
         if(pthread_mutex_init(&collectorArray[i].lock,NULL))exit(-1);//todo handle error
-        collectorArray[i].abrechnung=(int*)malloc(collectors*sizeof(int));
         for (int j = 0; j < collectors; ++j) {
-            collectorArray[i].abrechnung[j]=0;
             collectorArray[i].first=NULL;
         }
     }
@@ -278,7 +255,6 @@ void init(){
     //}
     for (int j = 0; j < collectors; ++j) {
         allfree(j);
-        free(collectorArray[j].abrechnung);
     }
     free(collectorArray);
 	exit(0);
