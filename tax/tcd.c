@@ -6,36 +6,11 @@
 #include <unistd.h>
 #include <time.h>
 
-/*fixme
- * - verlieren geld durch int.
- * - deadlock (finden/lösen).
- * - geld nicht korrekt.
- */
-
-//debug FLAGS
-int Flag_01=0;
-int Flag_02=0;
-int Flag_03=0;
-int Flag_04=1;
-int Flag_05=0;
-int Flag_06=0;
-int Flag_07=0;
-int Flag_08=0;
-int Flag_09=0;
-int Flag_10=0;
-int Flag_11=0;
-
-
 void lockAll();
 void unlockAll();
 int transaktion(int collectorID,int victim);
 
-//debug
-void DE_if(int Flag, char* msg){
-    if(Flag==1){
-        printf("%s\n",msg);
-    }
-}
+int Flag_04=0;
 
 typedef struct waiter_s{
     int vic;
@@ -49,8 +24,7 @@ typedef struct collector_s {
 	unsigned int bookings_out;
 	int* abrechnung;
 	waiter *first;
-	//debug
-    int* used;
+
     pthread_mutex_t lock;
 }collector_t;
 
@@ -62,7 +36,7 @@ int collectorCount;
 pthread_mutex_t collectorCountLock;
 collector_t *collectorArray;
 
-double time1=0.0, tstart, time2;//steven
+double time1=0.0, tstart, time2;
 
 
 
@@ -90,7 +64,6 @@ void printStats(){
 }
 
 static inline int roll(int sides){
-    //exitAfterTime("line 90");//steven
 	return rand() / (RAND_MAX + 1.0) * sides;
 }
 
@@ -103,7 +76,6 @@ void *collector(void *arg){
 	printf("Thread %d spawned, collectorID=%d\n",(unsigned int)pthread_self(),collectorID);
     int victim;
     while(1) {
-        //exitAfterTime("line 103");//steven
         /* select a thread to steal from */
         //collectors does not require a lock, because the value will never change and therefore the read-access doesn't have to be serialized
         while((victim = roll(collectors)) == collectorID);
@@ -157,23 +129,23 @@ int transaktion(int collectorID,int victim){
                 collectorArray[collectorID].first = new;
             } else {
                 waiter *curr = collectorArray[collectorID].first;
-                int in=0;
+                //int in=0;
                 while (curr->next != NULL) {
-                    if(curr->vic==victim){
-                        in=1;
-                    }
+                    //if(curr->vic==victim){
+                    //    in=1;
+                    //}
                     curr = curr->next;
                 }
-                if(curr->vic==victim){
-                  in=1;
-                }
-                if(in==0) {
+                //if(curr->vic==victim){
+                 // in=1;
+                //}
+                //if(in==0) {
                 collectorArray[collectorID].abrechnung[victim]++;
                 waiter *new = (waiter *) malloc(sizeof(new));
                 new->vic = victim;
                 new->next = curr->next;
                 curr->next = new;
-                }
+                //}
             }
 
             waiter *curr = collectorArray[collectorID].first;
@@ -186,13 +158,11 @@ int transaktion(int collectorID,int victim){
                 } else {
                     if (pre == collectorArray[collectorID].first) {
                         collectorArray[collectorID].abrechnung[pre->vic]--;
-                        collectorArray[collectorID].used[pre->vic]++;
                         curr = collectorArray[collectorID].first->next;
                         free(collectorArray[collectorID].first);
                         collectorArray[collectorID].first = curr;
                         return 1;
                     } else {
-                        collectorArray[collectorID].used[curr->vic]++;
                         collectorArray[collectorID].abrechnung[curr->vic]--;
                         pre->next = curr->next;
                         free(curr);
@@ -207,8 +177,6 @@ int transaktion(int collectorID,int victim){
                 if (collectorArray[collectorID].abrechnung[i] > 0) {
                     if (tryBooking(collectorID, i) == 0)continue;
                     collectorArray[collectorID].abrechnung[victim]--;
-                    //debug
-                    collectorArray[collectorID].used[victim]++;
                     return 1;
                 }
             }
@@ -216,11 +184,7 @@ int transaktion(int collectorID,int victim){
             return 0;
         }
     }else{
-        /*if(collectorArray[collectorID].abrechnung[victim]>0){
-            collectorArray[collectorID].abrechnung[victim]--;
-        }*/
-        //debug
-        //collectorArray[collectorID].used[victim]++;
+
         return 1;
     }
     return 0;
@@ -228,16 +192,12 @@ int transaktion(int collectorID,int victim){
 
 /*locks all mutexes*/
 void lockAll(){
-    //exitAfterTime("line 154");//steven
-    DE_if(Flag_01,"lockALL"); //debug
     for(int i = 0; i < collectors; i++){
         pthread_mutex_lock(&collectorArray[i].lock);
     }
 }
 /*unlocks all mutexes*/
 void unlockAll(){
-    //exitAfterTime("line 162");//steven
-    DE_if(Flag_01,"unlockALL"); //debug
     for(int i = 0; i < collectors; i++){
         pthread_mutex_unlock(&collectorArray[i].lock);
     }
@@ -257,15 +217,6 @@ void *shell(void *arg){
         time2 = time1/CLOCKS_PER_SEC;
         if((duration-time2)<=0) {
             lockAll();
-            //debug
-            for (int i = 0; i < collectors; ++i) {
-                printf("\n\n");
-                printf("collector: %d\n",i);
-                for (int j = 0; j < collectors; ++j) {
-                    printf("victim %d in wait: %d was used: %d\n",j,collectorArray[i].abrechnung[j],collectorArray[i].used[j]);
-                }
-            }
-            printf("\n\n");
             printStats();
             unlockAll();
             exit(0);
@@ -279,8 +230,8 @@ void *shell(void *arg){
  * then waits for termination of the shell thread, deallocates resources and exits
  * */
 void init(){
-    time1=0.0;//steven
-    tstart = clock();//steven
+    time1=0.0;
+    tstart = clock();
 
 	collectorArray = malloc(collectors * sizeof(collector_t));
 	collectorCount = 0;
@@ -290,13 +241,9 @@ void init(){
     for(int i = 0; i < collectors; i++){
         if(pthread_mutex_init(&collectorArray[i].lock,NULL))exit(-1);//todo handle error
         collectorArray[i].abrechnung=(int*)malloc(collectors*sizeof(int));
-        //debug
-        collectorArray[i].used=(int*)malloc(collectors*sizeof(int));
         for (int j = 0; j < collectors; ++j) {
             collectorArray[i].abrechnung[j]=0;
             collectorArray[i].first=NULL;
-            //debug
-            collectorArray[i].used[j]=0;
         }
     }
 
