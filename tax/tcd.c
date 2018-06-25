@@ -16,7 +16,7 @@
 int Flag_01=0;
 int Flag_02=0;
 int Flag_03=0;
-int Flag_04=0;
+int Flag_04=1;
 int Flag_05=0;
 int Flag_06=0;
 int Flag_07=0;
@@ -37,13 +37,23 @@ void DE_if(int Flag, char* msg){
     }
 }
 
+typedef struct waiter_s{
+    int vic;
+    struct waiter_s * next;
+
+}waiter;
+
 typedef struct collector_s {
 	unsigned int credit;
 	unsigned int bookings_in;
 	unsigned int bookings_out;
 	int* abrechnung;
+	waiter *first;
+	//debug
+    int* used;
     pthread_mutex_t lock;
 }collector_t;
+
 
 double duration;
 int collectors;
@@ -53,7 +63,6 @@ pthread_mutex_t collectorCountLock;
 collector_t *collectorArray;
 
 double time1=0.0, tstart, time2;//steven
-int wasprinted=0;//steven
 
 
 
@@ -78,27 +87,6 @@ void printStats(){
     }
     printf("/////////////////////////////////////////\n"
            "Total credit: %d (should be %d)\nTotal bookings_in: %d\nTotal bookings_out: %d\n--------",total_credit,funds*collectors,total_in,total_out);
-}
-
-/**
- * End all threads if the timelimit is reached
- */
-void exitAfterTime(char* line){ //steven
-    time1 = clock() - tstart;
-    time2 = time1/CLOCKS_PER_SEC;
-    if((duration-time2)<=0&&wasprinted==0){
-        wasprinted=1;
-        printf("%s\n",line);
-        lockAll();
-        printStats();
-        unlockAll();
-        exit(0);
-    } else{
-        if(wasprinted==1){
-            unlockAll();
-        }
-            return;
-    }
 }
 
 static inline int roll(int sides){
@@ -159,23 +147,83 @@ int tryBooking(int collectorID, int victimID){
 
 int transaktion(int collectorID,int victim){
     if(tryBooking(collectorID, victim)==0){
-        collectorArray[collectorID].abrechnung[victim]++;
-        /* fixme
-         * da wir von thread 1 nach und nach durchgehen,
-         * nehmen wir öfter die kleineren threads.(fairness problem)
-         *
-         * vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-         */
-        for (int i = 0; i < collectors; ++i) {
-            if(collectorArray[collectorID].abrechnung[i]>0){
-                return tryBooking(collectorID,i);
+        if(Flag_04!=1)collectorArray[collectorID].abrechnung[victim]++;
+        if(Flag_04==1) {
+            if (collectorArray[collectorID].first == NULL) {
+                collectorArray[collectorID].abrechnung[victim]++;
+                waiter *new = (waiter *) malloc(sizeof(new));
+                new->vic = victim;
+                new->next = NULL;
+                collectorArray[collectorID].first = new;
+            } else {
+                waiter *curr = collectorArray[collectorID].first;
+                int in=0;
+                while (curr->next != NULL) {
+                    if(curr->vic==victim){
+                        in=1;
+                    }
+                    curr = curr->next;
+                }
+                if(curr->vic==victim){
+                  in=1;
+                }
+                if(in==0) {
+                collectorArray[collectorID].abrechnung[victim]++;
+                waiter *new = (waiter *) malloc(sizeof(new));
+                new->vic = victim;
+                new->next = curr->next;
+                curr->next = new;
+                }
             }
+
+            waiter *curr = collectorArray[collectorID].first;
+            waiter *pre = collectorArray[collectorID].first;
+            while (curr != NULL) {
+                if (tryBooking(collectorID, curr->vic) == 0) {
+                    pre = curr;
+                    curr = curr->next;
+                    continue;
+                } else {
+                    if (pre == collectorArray[collectorID].first) {
+                        collectorArray[collectorID].abrechnung[pre->vic]--;
+                        collectorArray[collectorID].used[pre->vic]++;
+                        curr = collectorArray[collectorID].first->next;
+                        free(collectorArray[collectorID].first);
+                        collectorArray[collectorID].first = curr;
+                        return 1;
+                    } else {
+                        collectorArray[collectorID].used[curr->vic]++;
+                        collectorArray[collectorID].abrechnung[curr->vic]--;
+                        pre->next = curr->next;
+                        free(curr);
+                        return 1;
+                    }
+                }
+            }
+            return 0;
         }
-        return 0;
+        if(Flag_04!=1) {
+            for (int i = 0; i < collectors; ++i) {
+                if (collectorArray[collectorID].abrechnung[i] > 0) {
+                    if (tryBooking(collectorID, i) == 0)continue;
+                    collectorArray[collectorID].abrechnung[victim]--;
+                    //debug
+                    collectorArray[collectorID].used[victim]++;
+                    return 1;
+                }
+            }
+
+            return 0;
+        }
     }else{
-        collectorArray[collectorID].abrechnung[victim]--;
+        /*if(collectorArray[collectorID].abrechnung[victim]>0){
+            collectorArray[collectorID].abrechnung[victim]--;
+        }*/
+        //debug
+        //collectorArray[collectorID].used[victim]++;
         return 1;
     }
+    return 0;
 }
 
 /*locks all mutexes*/
@@ -195,14 +243,29 @@ void unlockAll(){
     }
 }
 
+void allfree(int collectorID){
+    waiter* curr =  collectorArray[collectorID].first;
+    while(curr!=NULL){
+        curr=curr->next;
+        free(collectorArray[collectorID].first);
+        collectorArray[collectorID].first=curr;
+    }
+}
 void *shell(void *arg){
-
-    //char buf[50];
     while(1){
         time1 = clock() - tstart;
         time2 = time1/CLOCKS_PER_SEC;
         if((duration-time2)<=0) {
             lockAll();
+            //debug
+            for (int i = 0; i < collectors; ++i) {
+                printf("\n\n");
+                printf("collector: %d\n",i);
+                for (int j = 0; j < collectors; ++j) {
+                    printf("victim %d in wait: %d was used: %d\n",j,collectorArray[i].abrechnung[j],collectorArray[i].used[j]);
+                }
+            }
+            printf("\n\n");
             printStats();
             unlockAll();
             exit(0);
@@ -210,9 +273,6 @@ void *shell(void *arg){
             sched_yield();
         }
     }
-    DE_if(Flag_11,"shell end");//debug
-    /* returning 0 implicitly calls pthread_exit(0) */
-    return 0;
 }
 
 /* initializes all the structs and mutexes/spawnes the desired amount of threads and the shell-thread
@@ -229,7 +289,15 @@ void init(){
     if(pthread_mutex_init(&collectorCountLock,NULL))exit(-1);//todo handle error
     for(int i = 0; i < collectors; i++){
         if(pthread_mutex_init(&collectorArray[i].lock,NULL))exit(-1);//todo handle error
-        collectorArray[i].abrechnung=(int*)calloc(collectors,sizeof(int));
+        collectorArray[i].abrechnung=(int*)malloc(collectors*sizeof(int));
+        //debug
+        collectorArray[i].used=(int*)malloc(collectors*sizeof(int));
+        for (int j = 0; j < collectors; ++j) {
+            collectorArray[i].abrechnung[j]=0;
+            collectorArray[i].first=NULL;
+            //debug
+            collectorArray[i].used[j]=0;
+        }
     }
 
 	/* set the scheduling policy to round robin whilst leaving all other attributes as default values*/
@@ -254,13 +322,17 @@ void init(){
     for(int i = 0; i < collectors; i++){
         pthread_mutex_destroy(&collectorArray[i].lock);
     }
+    for (int j = 0; j < collectors; ++j) {
+        allfree(j);
+        free(collectorArray[j].abrechnung);
+    }
     free(collectorArray);
 	exit(0);
 }
 
 int main(int argc, const char* argv[])
 {
-	duration = 10; // default duration in seconds
+	duration = 5; // default duration in seconds
 	collectors = 5;  // default number of tax collectors
 	funds = 300;     // default funding per collector in Euro
 	
