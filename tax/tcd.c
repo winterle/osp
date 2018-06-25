@@ -265,10 +265,11 @@ void init(){
 	for(int i = 0; i < collectors; i++){
 		collectorArray[i].credit = funds;
 		collectorArray[i].bookings_in = collectorArray[i].bookings_out = 0;
-		if(pthread_create(&newThread,&attr,&collector,NULL))exit(-1);//todo handle error
-        if(pthread_detach(newThread))exit(-1);//todo handle error
-
 	}
+    for(int i = 0; i < collectors; i++) {
+        if (pthread_create(&newThread, &attr, &collector, NULL))exit(-1);//todo handle error
+        if (pthread_detach(newThread))exit(-1);//todo handle error
+    }
 	/* waiting for the shell to exit, then free the Array and exit */
     //fixme freeing the array whilst the other threads still work on those values might cause invalid reads/writes?
 	pthread_join(shellThread,NULL);
