@@ -219,7 +219,7 @@ void *shell(void *arg){
             lockAll();
             printStats();
             unlockAll();
-            exit(0);
+            pthread_exit(0);
         }else{
             sched_yield();
         }
@@ -266,6 +266,7 @@ void init(){
 	/* waiting for the shell to exit, then free the Array and exit */
     //fixme freeing the array whilst the other threads still work on those values might cause invalid reads/writes?
 	pthread_join(shellThread,NULL);
+    lockAll();
     for(int i = 0; i < collectors; i++){
         pthread_mutex_destroy(&collectorArray[i].lock);
     }
