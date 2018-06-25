@@ -1,15 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include <string.h>
-#include <sched.h>
-#include <unistd.h>
-#include <time.h>
 
 void lockAll();
 void unlockAll();
 int transaktion(int collectorID,int victim);
-
 
 typedef struct waiter_s{
     int vic;
@@ -26,7 +21,6 @@ typedef struct collector_s {
     pthread_mutex_t lock;
 }collector_t;
 
-
 double duration;
 int collectors;
 unsigned int funds;
@@ -37,8 +31,6 @@ collector_t *collectorArray;
 int exitflag=0;
 
 double time1=0.0, tstart, time2;
-
-
 
 int tryBooking(int,int);
 
@@ -68,7 +60,6 @@ static inline int roll(int sides){
 }
 
 void *collector(void *arg){
-    //todo: can avoid the lock by passing the collectorID as argument, only modifying the collectorCount in the initial Thread
     pthread_mutex_lock(&collectorCountLock);
     int collectorID = collectorCount++;
     pthread_mutex_unlock(&collectorCountLock);
@@ -79,7 +70,6 @@ void *collector(void *arg){
         /* select a thread to steal from */
         //collectors does not require a lock, because the value will never change and therefore the read-access doesn't have to be serialized
         while((victim = roll(collectors)) == collectorID);
-        //fixme this works without a deadlock but results in unfair behaviour, since whenever a variable is locked / a collector
         //does not have enough money, no transaction will take place -> solution: push to queue?
 
         if(!transaktion(collectorID,victim))continue;
@@ -222,37 +212,31 @@ void init(){
 	collectorCount = 0;
 
     /* initialize mutexes before starting any threads */
-    if(pthread_mutex_init(&collectorCountLock,NULL))exit(-1);//todo handle error
+    if(pthread_mutex_init(&collectorCountLock,NULL))exit(-1);
     for(int i = 0; i < collectors; i++){
-        if(pthread_mutex_init(&collectorArray[i].lock,NULL))exit(-1);//todo handle error
-        for (int j = 0; j < collectors; ++j) {
-            collectorArray[i].first=NULL;
-        }
+        if(pthread_mutex_init(&collectorArray[i].lock,NULL))exit(-1);
+        collectorArray[i].first=NULL;
     }
 
 	/* set the scheduling policy to round robin whilst leaving all other attributes as default values*/
 	pthread_attr_t attr;
-	if(pthread_attr_init(&attr))exit(-1);//todo handle error
-	if(pthread_attr_setschedpolicy(&attr,SCHED_RR))exit(-1);//todo handle error
+	if(pthread_attr_init(&attr))exit(-1);
+	if(pthread_attr_setschedpolicy(&attr,SCHED_RR))exit(-1);
 
     /* spawn the shell */
 	pthread_t newThread;
     pthread_t shellThread;
-    if(pthread_create(&shellThread,&attr,&shell,NULL))exit(-1);//todo handle error
+    if(pthread_create(&shellThread,&attr,&shell,NULL))exit(-1);
 	for(int i = 0; i < collectors; i++){
 		collectorArray[i].credit = funds;
 		collectorArray[i].bookings_in = collectorArray[i].bookings_out = 0;
 	}
     for(int i = 0; i < collectors; i++) {
-        if (pthread_create(&newThread, &attr, &collector, NULL))exit(-1);//todo handle error
-        if (pthread_detach(newThread))exit(-1);//todo handle error
+        if (pthread_create(&newThread, &attr, &collector, NULL))exit(-1);
+        if (pthread_detach(newThread))exit(-1);
     }
-	/* waiting for the shell to exit, then free the Array and exit */
-    //fixme freeing the array whilst the other threads still work on those values might cause invalid reads/writes?
+	/* waiting for the shell to exit, then free allocated memory and exit */
 	pthread_join(shellThread,NULL);
-    //for(int i = 0; i < collectors; i++){
-    //    pthread_mutex_destroy(&collectorArray[i].lock);
-    //}
     for (int j = 0; j < collectors; ++j) {
         allfree(j);
     }
