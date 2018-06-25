@@ -10,7 +10,7 @@ void lockAll();
 void unlockAll();
 int transaktion(int collectorID,int victim);
 
-int Flag_04=0;
+int Flag_04=1;
 
 typedef struct waiter_s{
     int vic;
@@ -128,7 +128,7 @@ int transaktion(int collectorID,int victim){
         if(Flag_04==1) {
             if (collectorArray[collectorID].first == NULL) {
                 collectorArray[collectorID].abrechnung[victim]++;
-                waiter *new = (waiter *) malloc(sizeof(new));
+                waiter *new = (waiter *) malloc(sizeof(waiter));
                 new->vic = victim;
                 new->next = NULL;
                 collectorArray[collectorID].first = new;
@@ -146,7 +146,7 @@ int transaktion(int collectorID,int victim){
                 }
                 if(in==0) {
                 collectorArray[collectorID].abrechnung[victim]++;
-                waiter *new = (waiter *) malloc(sizeof(new));
+                waiter *new = (waiter *) malloc(sizeof(waiter));
                 new->vic = victim;
                 new->next = curr->next;
                 curr->next = new;
