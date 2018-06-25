@@ -36,6 +36,8 @@ int collectorCount;
 pthread_mutex_t collectorCountLock;
 collector_t *collectorArray;
 
+int exitflag=0;
+
 double time1=0.0, tstart, time2;
 
 
@@ -81,6 +83,7 @@ void *collector(void *arg){
         while((victim = roll(collectors)) == collectorID);
         //fixme this works without a deadlock but results in unfair behaviour, since whenever a variable is locked / a collector
         //does not have enough money, no transaction will take place -> solution: push to queue?
+
         if(!transaktion(collectorID,victim))continue;
         sched_yield();
     }
@@ -118,6 +121,8 @@ int tryBooking(int collectorID, int victimID){
     }
 
 int transaktion(int collectorID,int victim){
+    if(exitflag==1){
+        pthread_exit(0); }
     if(tryBooking(collectorID, victim)==0){
         if(Flag_04!=1)collectorArray[collectorID].abrechnung[victim]++;
         if(Flag_04==1) {
@@ -129,23 +134,23 @@ int transaktion(int collectorID,int victim){
                 collectorArray[collectorID].first = new;
             } else {
                 waiter *curr = collectorArray[collectorID].first;
-                //int in=0;
+                int in=0;
                 while (curr->next != NULL) {
-                    //if(curr->vic==victim){
-                    //    in=1;
-                    //}
+                    if(curr->vic==victim){
+                        in=1;
+                    }
                     curr = curr->next;
                 }
-                //if(curr->vic==victim){
-                 // in=1;
-                //}
-                //if(in==0) {
+                if(curr->vic==victim){
+                  in=1;
+                }
+                if(in==0) {
                 collectorArray[collectorID].abrechnung[victim]++;
                 waiter *new = (waiter *) malloc(sizeof(new));
                 new->vic = victim;
                 new->next = curr->next;
                 curr->next = new;
-                //}
+                }
             }
 
             waiter *curr = collectorArray[collectorID].first;
@@ -219,7 +224,8 @@ void *shell(void *arg){
             lockAll();
             printStats();
             unlockAll();
-            exit(0);
+            exitflag=1;
+            pthread_exit(0);
         }else{
             sched_yield();
         }
@@ -266,16 +272,14 @@ void init(){
 	/* waiting for the shell to exit, then free the Array and exit */
     //fixme freeing the array whilst the other threads still work on those values might cause invalid reads/writes?
 	pthread_join(shellThread,NULL);
+    //for(int i = 0; i < collectors; i++){
+    //    pthread_mutex_destroy(&collectorArray[i].lock);
+    //}
     for (int j = 0; j < collectors; ++j) {
         allfree(j);
         free(collectorArray[j].abrechnung);
     }
-    /*for(int i = 0; i < collectors; i++){
-        pthread_mutex_destroy(&collectorArray[i].lock);
-    }
-     */
     free(collectorArray);
-
 	exit(0);
 }
 
