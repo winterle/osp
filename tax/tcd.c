@@ -266,7 +266,6 @@ void init(){
 	/* waiting for the shell to exit, then free the Array and exit */
     //fixme freeing the array whilst the other threads still work on those values might cause invalid reads/writes?
 	pthread_join(shellThread,NULL);
-    lockAll();
     for (int j = 0; j < collectors; ++j) {
         allfree(j);
         free(collectorArray[j].abrechnung);
