@@ -3,12 +3,13 @@
 .PHONY: all run pack clean
 .SILENT: run
 
+SH = shell
 TAR = cli/client srv/server
 PCK = lab-3.zip
 
 export CFLAGS = -std=gnu11 -c -g -Os -Wall -Werror
 
-all: $(TAR)
+all: $(TAR) $(SH)
 
 run: all
 	gcc -std=gnu11 shell.c -o shell
@@ -32,4 +33,5 @@ cli/client: cli/*.c cli/*.h
 srv/server: srv/*.c srv/*.h
 	@$(MAKE) -C $(@D)
 
-
+shell: 
+	gcc -std=gnu11 shell.c -o shell
